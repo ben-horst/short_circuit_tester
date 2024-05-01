@@ -28,6 +28,7 @@ class ShortCircuitTester:
         self.shunt_resistance = 0.0001  #ohms
         self.data_volt = []
         self.data_current = []
+        self.data_current_smoothed = []
         self.data_time = []
         #self.reset_cDAQ()
         self.initialize_outputs()
@@ -114,19 +115,36 @@ class ShortCircuitTester:
         self.append_data(READ_ALL_AVAILABLE)
         self.analog_task.stop()
         self.data_time = np.arange(len(self.data_volt)) / self.datarate
+        self.data_current_smoothed = self.moving_average(self.data_current)
+        print(f'length of current: {len(self.data_current)}')
+        print(f'length of smoothed: {len(self.data_current_smoothed)}')
         time_offset = self.pre_log_time + self.delay_before_SCR
         self.data_time = np.subtract(self.data_time, time_offset)   #shift time vector so t=0 is start of short
 
+    def moving_average(self, data, window_size=100):
+        if len(data) < window_size:
+            raise ValueError("Window size cannot be greater than the length of data")
+
+        moving_averages = []
+        window_sum = sum(data[:window_size])
+        moving_averages.extend([window_sum / window_size] * (window_size))
+
+        for i in range(window_size, len(data)):
+            window_sum += data[i] - data[i - window_size]
+            moving_averages.append(window_sum / window_size)
+
+        return moving_averages
+
     def save_data(self):
-        data_array = np.asarray([self.data_time, self.data_volt, self.data_current]).transpose()
+        data_array = np.asarray([self.data_time, self.data_volt, self.data_current, self.data_current_smoothed]).transpose()
         filename = 'logs/' + self.test_name + '-' + datetime.now().strftime("%m_%d_%Y-%H_%M_%S") + '.csv'
-        header = 'Time (s),Battery Voltage (V),Current (A)'
+        header = 'Time (s),Battery Voltage (V),Current raw (A),Current smoothed (A)'
         np.savetxt(filename, data_array, delimiter=',', header=header, fmt='%0.5f')
     
     def plot(self):
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         ax1.plot(self.data_time, self.data_volt)
-        ax2.plot(self.data_time, self.data_current)
+        ax2.plot(self.data_time, self.data_current_smoothed)
         fig.suptitle(f"Short Circuit - {self.test_name}")
         plt.xlabel("Time (s)")
         ax1.set(ylabel='Battery Voltage (V)')
